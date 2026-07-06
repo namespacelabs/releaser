@@ -20,12 +20,16 @@ func TestBuild(t *testing.T) {
 	files := map[string]string{
 		"ns_1.2.3_darwin_arm64.tar.gz":  "",
 		"ns_1.2.3_linux_amd64.tar.gz":   "",
+		"ns_1.2.3_windows_amd64.zip":    "",
 		"nsc_1.2.3_darwin_arm64.tar.gz": "",
 		"nsc_1.2.3_linux_amd64.tar.gz":  "",
+		"nsc_1.2.3_windows_arm64.zip":   "",
 		"checksums.txt": "aaa ns_1.2.3_darwin_arm64.tar.gz\n" +
 			"bbb ns_1.2.3_linux_amd64.tar.gz\n" +
+			"eee ns_1.2.3_windows_amd64.zip\n" +
 			"ccc nsc_1.2.3_darwin_arm64.tar.gz\n" +
-			"ddd nsc_1.2.3_linux_amd64.tar.gz\n",
+			"ddd nsc_1.2.3_linux_amd64.tar.gz\n" +
+			"fff nsc_1.2.3_windows_arm64.zip\n",
 	}
 
 	for name, contents := range files {
@@ -46,8 +50,8 @@ func TestBuild(t *testing.T) {
 		t.Fatalf("Build: %v", err)
 	}
 
-	if len(tarballs) != 4 {
-		t.Fatalf("got %d tarballs, want 4", len(tarballs))
+	if len(tarballs) != 6 {
+		t.Fatalf("got %d archives, want 6", len(tarballs))
 	}
 
 	if got := manifests["ns"].Version; got != tag {
@@ -58,12 +62,33 @@ func TestBuild(t *testing.T) {
 		t.Fatalf("published_at = %v, want %v", got, publishedAt)
 	}
 
-	if got := len(manifests["ns"].Artifacts); got != 2 {
-		t.Fatalf("ns artifacts = %d, want 2", got)
+	if got := len(manifests["ns"].Artifacts); got != 3 {
+		t.Fatalf("ns artifacts = %d, want 3", got)
 	}
 
 	if got := manifests["nsc"].Artifacts[1].SHA256; got != "ddd" {
 		t.Fatalf("nsc linux checksum = %q, want %q", got, "ddd")
+	}
+
+	// The windows .zip artifact must be discovered and recorded.
+	var win *Artifact
+	for i := range manifests["nsc"].Artifacts {
+		if a := &manifests["nsc"].Artifacts[i]; a.OS == "WINDOWS" {
+			win = a
+			break
+		}
+	}
+	if win == nil {
+		t.Fatalf("nsc windows artifact not found in %+v", manifests["nsc"].Artifacts)
+	}
+	if win.Filename != "nsc_1.2.3_windows_arm64.zip" {
+		t.Fatalf("nsc windows filename = %q, want %q", win.Filename, "nsc_1.2.3_windows_arm64.zip")
+	}
+	if win.Arch != "ARM64" {
+		t.Fatalf("nsc windows arch = %q, want %q", win.Arch, "ARM64")
+	}
+	if win.SHA256 != "fff" {
+		t.Fatalf("nsc windows checksum = %q, want %q", win.SHA256, "fff")
 	}
 }
 

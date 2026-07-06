@@ -3,7 +3,7 @@
 // you may not use this file except in compliance with the License.
 
 // Command release publishes a parameterized release manifest and the
-// associated tarballs to a Tigris bucket.
+// associated release archives to a Tigris bucket.
 //
 // Usage:
 //
@@ -14,10 +14,11 @@
 //	    --installer install/install.sh=install/install.sh \
 //	    --installer install/install_nsc.sh=install/install_nsc.sh
 //
-// The "release" subcommand uploads all <tool>_<version>_<os>_<arch>.tar.gz files
-// from the dist directory along with one manifest JSON per tool. The same set
-// of flags works for ns, nsc, devbox or any other GoReleaser-style tool by
-// passing the desired tool list via --tools.
+// The "release" subcommand uploads all <tool>_<version>_<os>_<arch> archives
+// (.tar.gz for darwin/linux, .zip for windows) from the dist directory along
+// with one manifest JSON per tool. The same set of flags works for ns, nsc,
+// devbox or any other GoReleaser-style tool by passing the desired tool list
+// via --tools.
 package main
 
 import (
@@ -60,7 +61,7 @@ func runRelease(ctx context.Context, args []string) error {
 	tag := fs.String("tag", "", "Release tag, for example v0.0.123 (required)")
 	keyPrefix := fs.String("key-prefix", "foundation", "Bucket key prefix (e.g. foundation, devbox)")
 	tools := fs.String("tools", "ns,nsc", "Comma-separated list of tools to publish (e.g. ns,nsc or devbox)")
-	oses := fs.String("os", "darwin,linux", "Comma-separated list of operating systems to accept")
+	oses := fs.String("os", "darwin,linux,windows", "Comma-separated list of operating systems to accept")
 	arches := fs.String("arch", "amd64,arm64", "Comma-separated list of architectures to accept")
 	fs.Parse(args)
 

@@ -27,8 +27,8 @@ type ReleaseOptions struct {
 	Bucket string
 	// Endpoint is the Tigris S3 endpoint. Defaults to tigris.DefaultEndpoint.
 	Endpoint string
-	// DistDir is the local GoReleaser dist directory containing the tarballs
-	// and checksums.txt.
+	// DistDir is the local GoReleaser dist directory containing the release
+	// archives and checksums.txt.
 	DistDir string
 	// Tag is the release tag, e.g. "v0.0.123".
 	Tag string
@@ -78,7 +78,7 @@ func Release(ctx context.Context, opts ReleaseOptions) error {
 		return err
 	}
 
-	manifests, tarballs, err := manifest.Build(opts.DistDir, version, opts.Tag, opts.PublishedAt, checksums, manifest.BuildOptions{
+	manifests, archives, err := manifest.Build(opts.DistDir, version, opts.Tag, opts.PublishedAt, checksums, manifest.BuildOptions{
 		Tools:  opts.Tools,
 		OSes:   opts.OSes,
 		Arches: opts.Arches,
@@ -92,13 +92,13 @@ func Release(ctx context.Context, opts ReleaseOptions) error {
 		return err
 	}
 
-	return uploadRelease(ctx, client, opts, manifests, tarballs, checksumsPath)
+	return uploadRelease(ctx, client, opts, manifests, archives, checksumsPath)
 }
 
-func uploadRelease(ctx context.Context, client *s3.Client, opts ReleaseOptions, manifests map[string]manifest.Manifest, tarballs []string, checksumsPath string) error {
-	for _, file := range tarballs {
+func uploadRelease(ctx context.Context, client *s3.Client, opts ReleaseOptions, manifests map[string]manifest.Manifest, archives []string, checksumsPath string) error {
+	for _, file := range archives {
 		key := path.Join(opts.KeyPrefix, "releases", opts.Tag, filepath.Base(file))
-		if err := tigris.PutFile(ctx, client, opts.Bucket, key, file, "application/gzip"); err != nil {
+		if err := tigris.PutFile(ctx, client, opts.Bucket, key, file, contentTypeForArchive(file)); err != nil {
 			return err
 		}
 	}
@@ -125,6 +125,16 @@ func uploadRelease(ctx context.Context, client *s3.Client, opts ReleaseOptions, 
 	}
 
 	return nil
+}
+
+// contentTypeForArchive returns the MIME type to use when uploading a release
+// archive, based on its file extension. GoReleaser produces .tar.gz archives
+// for darwin/linux and .zip archives for windows.
+func contentTypeForArchive(file string) string {
+	if strings.HasSuffix(file, ".zip") {
+		return "application/zip"
+	}
+	return "application/gzip"
 }
 
 // InstallerOptions configures an installer-script publish.

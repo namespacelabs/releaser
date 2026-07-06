@@ -28,7 +28,7 @@ type Manifest struct {
 	Artifacts   []Artifact `json:"artifacts"`
 }
 
-// Artifact describes a single uploaded tarball for a Manifest.
+// Artifact describes a single uploaded archive for a Manifest.
 type Artifact struct {
 	Filename string `json:"filename"`
 	OS       string `json:"os"`
@@ -44,7 +44,7 @@ type BuildOptions struct {
 	Tools []string
 
 	// OSes restricts the set of operating systems that are accepted. Defaults
-	// to {"darwin", "linux"} when empty.
+	// to {"darwin", "linux", "windows"} when empty.
 	OSes []string
 
 	// Arches restricts the set of architectures that are accepted. Defaults to
@@ -53,13 +53,15 @@ type BuildOptions struct {
 }
 
 var (
-	defaultOSes   = []string{"darwin", "linux"}
+	defaultOSes   = []string{"darwin", "linux", "windows"}
 	defaultArches = []string{"amd64", "arm64"}
 )
 
-// Build inspects distDir for tarballs of the form <tool>_<version>_<os>_<arch>.tar.gz
-// and produces a Manifest per tool. It returns the manifests keyed by tool name
-// and the absolute paths of the matched tarballs.
+// Build inspects distDir for archives of the form
+// <tool>_<version>_<os>_<arch>.tar.gz (darwin/linux) or
+// <tool>_<version>_<os>_<arch>.zip (windows) and produces a Manifest per tool.
+// It returns the manifests keyed by tool name and the absolute paths of the
+// matched archives.
 func Build(distDir, version, tag string, publishedAt time.Time, checksums map[string]string, opts BuildOptions) (map[string]Manifest, []string, error) {
 	if len(opts.Tools) == 0 {
 		return nil, nil, fmt.Errorf("at least one tool is required")
@@ -74,7 +76,7 @@ func Build(distDir, version, tag string, publishedAt time.Time, checksums map[st
 		arches = defaultArches
 	}
 
-	re, err := compileTarballRE(opts.Tools, oses, arches)
+	re, err := compileArchiveRE(opts.Tools, oses, arches)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -89,7 +91,7 @@ func Build(distDir, version, tag string, publishedAt time.Time, checksums map[st
 		manifests[tool] = Manifest{Tool: tool, Version: tag, PublishedAt: publishedAt}
 	}
 
-	var tarballs []string
+	var archives []string
 	for _, entry := range entries {
 		if entry.IsDir() {
 			continue
@@ -120,7 +122,7 @@ func Build(distDir, version, tag string, publishedAt time.Time, checksums map[st
 		m := manifests[tool]
 		m.Artifacts = append(m.Artifacts, artifact)
 		manifests[tool] = m
-		tarballs = append(tarballs, fmt.Sprintf("%s/%s", strings.TrimRight(distDir, "/"), entry.Name()))
+		archives = append(archives, fmt.Sprintf("%s/%s", strings.TrimRight(distDir, "/"), entry.Name()))
 	}
 
 	for _, tool := range opts.Tools {
@@ -135,18 +137,20 @@ func Build(distDir, version, tag string, publishedAt time.Time, checksums map[st
 		manifests[tool] = m
 	}
 
-	sort.Strings(tarballs)
-	return manifests, tarballs, nil
+	sort.Strings(archives)
+	return manifests, archives, nil
 }
 
-func compileTarballRE(tools, oses, arches []string) (*regexp.Regexp, error) {
+func compileArchiveRE(tools, oses, arches []string) (*regexp.Regexp, error) {
 	for _, tool := range tools {
 		if tool == "" {
 			return nil, fmt.Errorf("tool name must not be empty")
 		}
 	}
 
-	pattern := fmt.Sprintf(`^(%s)_([^_]+)_(%s)_(%s)\.tar\.gz$`,
+	// GoReleaser produces .tar.gz archives for darwin/linux and .zip archives
+	// for windows.
+	pattern := fmt.Sprintf(`^(%s)_([^_]+)_(%s)_(%s)(?:\.tar\.gz|\.zip)$`,
 		strings.Join(escapeAll(tools), "|"),
 		strings.Join(escapeAll(oses), "|"),
 		strings.Join(escapeAll(arches), "|"),
