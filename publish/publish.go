@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"path"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -30,6 +31,9 @@ type ReleaseOptions struct {
 	// DistDir is the local GoReleaser dist directory containing the release
 	// archives and checksums.txt.
 	DistDir string
+	// PublishBinaries also uploads binary-format artifacts from artifacts.json
+	// for the selected platforms. Defaults to false; manifests remain package-only.
+	PublishBinaries bool
 	// Tag is the release tag, e.g. "v0.0.123".
 	Tag string
 	// KeyPrefix is the bucket key prefix under which artifacts are uploaded,
@@ -71,18 +75,7 @@ func Release(ctx context.Context, opts ReleaseOptions) error {
 		opts.PublishedAt = time.Now().UTC()
 	}
 
-	version := strings.TrimPrefix(opts.Tag, "v")
-	checksumsPath := filepath.Join(opts.DistDir, "checksums.txt")
-	checksums, err := manifest.ReadChecksums(checksumsPath)
-	if err != nil {
-		return err
-	}
-
-	manifests, archives, err := manifest.Build(opts.DistDir, version, opts.Tag, opts.PublishedAt, checksums, manifest.BuildOptions{
-		Tools:  opts.Tools,
-		OSes:   opts.OSes,
-		Arches: opts.Arches,
-	})
+	manifests, uploads, checksumsPath, err := buildRelease(opts)
 	if err != nil {
 		return err
 	}
@@ -92,13 +85,55 @@ func Release(ctx context.Context, opts ReleaseOptions) error {
 		return err
 	}
 
-	return uploadRelease(ctx, client, opts, manifests, archives, checksumsPath)
+	return uploadRelease(ctx, client, opts, manifests, uploads, checksumsPath)
 }
 
-func uploadRelease(ctx context.Context, client *s3.Client, opts ReleaseOptions, manifests map[string]manifest.Manifest, archives []string, checksumsPath string) error {
-	for _, file := range archives {
-		key := path.Join(opts.KeyPrefix, "releases", opts.Tag, filepath.Base(file))
-		if err := tigris.PutFile(ctx, client, opts.Bucket, key, file, contentTypeForArchive(file)); err != nil {
+type artifactUpload struct {
+	Filename    string
+	SourcePath  string
+	ContentType string
+}
+
+func buildRelease(opts ReleaseOptions) (map[string]manifest.Manifest, []artifactUpload, string, error) {
+	version := strings.TrimPrefix(opts.Tag, "v")
+	checksumsPath := filepath.Join(opts.DistDir, "checksums.txt")
+	checksums, err := manifest.ReadChecksums(checksumsPath)
+	if err != nil {
+		return nil, nil, "", err
+	}
+
+	manifests, archives, err := manifest.Build(opts.DistDir, version, opts.Tag, opts.PublishedAt, checksums, manifest.BuildOptions{
+		Tools:  opts.Tools,
+		OSes:   opts.OSes,
+		Arches: opts.Arches,
+	})
+	if err != nil {
+		return nil, nil, "", err
+	}
+
+	var uploads []artifactUpload
+	if opts.PublishBinaries {
+		uploads, err = binaryUploads(opts.DistDir, version, checksums, manifests)
+		if err != nil {
+			return nil, nil, "", err
+		}
+	}
+	for _, archive := range archives {
+		uploads = append(uploads, artifactUpload{
+			Filename:    filepath.Base(archive),
+			SourcePath:  archive,
+			ContentType: contentTypeForArchive(archive),
+		})
+	}
+	sort.Slice(uploads, func(i, j int) bool { return uploads[i].Filename < uploads[j].Filename })
+
+	return manifests, uploads, checksumsPath, nil
+}
+
+func uploadRelease(ctx context.Context, client *s3.Client, opts ReleaseOptions, manifests map[string]manifest.Manifest, uploads []artifactUpload, checksumsPath string) error {
+	for _, upload := range uploads {
+		key := path.Join(opts.KeyPrefix, "releases", opts.Tag, upload.Filename)
+		if err := tigris.PutFile(ctx, client, opts.Bucket, key, upload.SourcePath, upload.ContentType); err != nil {
 			return err
 		}
 	}
