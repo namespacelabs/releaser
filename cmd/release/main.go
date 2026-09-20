@@ -19,6 +19,11 @@
 // with one manifest JSON per tool. The same set of flags works for ns, nsc,
 // devbox or any other GoReleaser-style tool by passing the desired tool list
 // via --tools.
+//
+// Pass --publish-binaries and enable GoReleaser archives.formats: [tar.gz, binary]
+// to upload raw binaries alongside packages. Binary artifacts are read from
+// artifacts.json and must appear in checksums.txt. Installer manifests continue
+// to contain only packages.
 package main
 
 import (
@@ -63,17 +68,19 @@ func runRelease(ctx context.Context, args []string) error {
 	tools := fs.String("tools", "ns,nsc", "Comma-separated list of tools to publish (e.g. ns,nsc or devbox)")
 	oses := fs.String("os", "darwin,linux,windows", "Comma-separated list of operating systems to accept")
 	arches := fs.String("arch", "amd64,arm64", "Comma-separated list of architectures to accept")
+	publishBinaries := fs.Bool("publish-binaries", false, "Upload raw binary-format artifacts alongside packages")
 	fs.Parse(args)
 
 	return publish.Release(ctx, publish.ReleaseOptions{
-		Bucket:    *bucket,
-		Endpoint:  *endpoint,
-		DistDir:   *distDir,
-		Tag:       *tag,
-		KeyPrefix: *keyPrefix,
-		Tools:     splitList(*tools),
-		OSes:      splitList(*oses),
-		Arches:    splitList(*arches),
+		Bucket:          *bucket,
+		Endpoint:        *endpoint,
+		DistDir:         *distDir,
+		Tag:             *tag,
+		KeyPrefix:       *keyPrefix,
+		Tools:           splitList(*tools),
+		OSes:            splitList(*oses),
+		Arches:          splitList(*arches),
+		PublishBinaries: *publishBinaries,
 	})
 }
 
